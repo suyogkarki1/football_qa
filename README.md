@@ -57,4 +57,21 @@ pip install torch pandas jupyter sentence-transformers scikit-learn
 jupyter notebook
 ```
 
+### Notebooks
+
 Open either notebook and run all cells. Each takes a few minutes on CPU. The first run of `embeddings.ipynb` downloads the ~400 MB pretrained model.
+
+### Web app
+
+`app.py` serves an animated, football-themed page for asking the model questions:
+
+- Ask a question and the answer flips onto a stadium scoreboard with the model's confidence and other guesses. The model takes a penalty too: it scores when it's confident and gets saved when it isn't.
+- Take penalties yourself: aim with the mouse (or tap on a phone) and click to shoot. The keeper dives to save, and you can also hit the post or miss. Top corners are hardest to save.
+- Legends cards for iconic players ask a question about them with one click.
+
+```bash
+pip install flask
+python app.py
+```
+
+Then open http://127.0.0.1:5000. The web app uses the embeddings model trained on all questions. The first start takes a few minutes to train it, then it's cached in `model.joblib`.

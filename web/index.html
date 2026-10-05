@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Football QA</title>
+<meta name="description" content="Ask football trivia questions and watch the model take its shot.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --night: #070d1a;
+    --night-2: #0d1830;
+    --panel: #0f1b33cc;
+    --panel-border: #2a3d66;
+    --grass-1: #1f7a3a;
+    --grass-2: #239044;
+    --line: #e9fbe9;
+    --gold: #ffd23f;
+    --gold-dim: #8a7320;
+    --red: #ff4d5e;
+    --text: #eef3ff;
+    --muted: #9fb0d4;
+    --tile: #121212;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #1b2d57 0%, var(--night) 60%) fixed, var(--night);
+    color: var(--text);
+    font-family: Inter, system-ui, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  a { color: var(--gold); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---------- header ---------- */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 0 4px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 34px; height: 34px; animation: spin 8s linear infinite; }
+  .brand h1 { font-family: 'Bebas Neue', Impact, sans-serif; font-size: 34px; letter-spacing: 2px; margin: 0; line-height: 1; }
+  .brand h1 span { color: var(--gold); }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stat { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 999px; padding: 6px 12px; font-size: 12px; color: var(--muted); }
+  .stat b { color: var(--text); }
+
+  /* ---------- stadium scene ---------- */
+  /* height is capped to the window so the pitch, question box and answer all fit on one screen */
+  .scene, .panel { width: min(100%, max(440px, calc((100vh - 330px) * 2))); margin-left: auto; margin-right: auto; }
+  .scene { position: relative; aspect-ratio: 2 / 1; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--panel-border); box-shadow: 0 30px 80px #0008; margin-top: 8px; }
+  .scene > svg.bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .beam { animation: beam 4s ease-in-out infinite alternate; transform-origin: top center; }
+  .beam.b2 { animation-delay: -2s; }
+  .flash { animation: flash 3s infinite; opacity: 0; }
+
+  .ball { position: absolute; left: 50%; top: 84%; width: 7%; aspect-ratio: 1; translate: -50% -50%; z-index: 4; filter: drop-shadow(0 6px 6px #0007); }
+  .ball svg { width: 100%; height: 100%; display: block; }
+  .ball.idle svg { animation: bob 1.6s ease-in-out infinite; }
+  .shadow { position: absolute; left: 50%; top: 88.5%; width: 6%; height: 1.6%; translate: -50% -50%; background: radial-gradient(#0009, transparent 70%); border-radius: 50%; z-index: 3; }
+
+  .keeper { position: absolute; left: 50%; top: 35%; width: 7.5%; translate: -50% -50%; z-index: 2; animation: sway 2.4s ease-in-out infinite; pointer-events: none; }
+  .keeper svg { width: 100%; display: block; }
+  .keeper.diving { animation: none; }
+
+  /* aiming */
+  .scene { cursor: crosshair; touch-action: manipulation; }
+  .aim { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none; opacity: 0; transition: opacity .2s; }
+  .aim line { stroke: #ffffffcc; stroke-width: .5; stroke-dasharray: 1.2 1.2; vector-effect: non-scaling-stroke; }
+  .reticle { position: absolute; width: 5%; aspect-ratio: 1; translate: -50% -50%; z-index: 5; pointer-events: none; border: 2px solid var(--gold); border-radius: 50%; box-shadow: 0 0 12px #ffd23f99, inset 0 0 8px #ffd23f66; opacity: 0; transition: opacity .2s; }
+  .reticle::before, .reticle::after { content: ''; position: absolute; background: var(--gold); left: 50%; top: 50%; translate: -50% -50%; }
+  .reticle::before { width: 2px; height: 140%; }
+  .reticle::after { width: 140%; height: 2px; }
+  .scene.aiming .aim, .scene.aiming .reticle { opacity: 1; }
+  .ball, .shadow, .callout, .confetti { pointer-events: none; }
+
+  .tally { position: absolute; left: 2%; top: 4%; z-index: 6; display: flex; align-items: center; gap: 8px; font-family: 'Bebas Neue', Impact, sans-serif; letter-spacing: 2px; font-size: clamp(14px, 2.4vw, 22px); background: #000a; border: 1px solid #ffffff22; border-radius: 8px; padding: 4px 10px; pointer-events: none; }
+  .tally b { color: var(--gold); font-size: 1.3em; min-width: 1ch; text-align: center; }
+  .hint { position: absolute; left: 50%; top: 58%; translate: -50% 0; z-index: 6; background: #000b; border: 1px solid #ffffff22; color: var(--text); font-size: clamp(11px, 1.8vw, 14px); padding: 6px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; transition: opacity .4s; animation: nudge 1.6s ease-in-out infinite; }
+  .hint.gone { opacity: 0; }
+
+  .net { transform-origin: 50% 0; }
+  .net.ripple { animation: ripple .7s ease-out; }
+
+  .callout { position: absolute; left: 50%; top: 52%; translate: -50% -50%; z-index: 6; font-family: 'Bebas Neue', Impact, sans-serif; font-size: clamp(42px, 11vw, 120px); letter-spacing: 4px; color: var(--gold); text-shadow: 0 4px 0 #000a, 0 0 40px #ffd23f88; pointer-events: none; opacity: 0; white-space: nowrap; }
+  .callout.saved { color: var(--red); text-shadow: 0 4px 0 #000a, 0 0 40px #ff4d5e88; }
+  .callout.show { animation: pop 1.6s ease-out forwards; }
+
+  .confetti { position: absolute; top: -4%; width: 8px; height: 14px; z-index: 5; border-radius: 2px; animation: fall linear forwards; }
+
+  /* ---------- ask panel ---------- */
+  .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); backdrop-filter: blur(8px); padding: 12px; margin-top: 10px; }
+  form { display: flex; gap: 10px; }
+  input[type=text] { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--text); background: #060c18; border: 1px solid var(--panel-border); border-radius: 10px; padding: 14px 16px; outline: none; transition: border-color .2s, box-shadow .2s; }
+  input[type=text]:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #ffd23f33; }
+  button.shoot { font-family: 'Bebas Neue', Impact, sans-serif; font-size: 22px; letter-spacing: 2px; color: #1a1300; background: linear-gradient(180deg, #ffe27a, var(--gold)); border: 0; border-radius: 10px; padding: 0 22px; cursor: pointer; transition: transform .15s, filter .15s; display: flex; align-items: center; gap: 8px; }
+  button.shoot:hover { transform: translateY(-2px); filter: brightness(1.05); }
+  button.shoot:active { transform: translateY(1px); }
+  button.shoot:disabled { filter: grayscale(.6) brightness(.8); cursor: wait; transform: none; }
+  .try { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .chip { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 1px dashed var(--panel-border); border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: color .2s, border-color .2s; }
+  .chip:hover { color: var(--text); border-color: var(--gold); }
+
+  /* ---------- scoreboard ---------- */
+  .board { margin-top: 10px; background: #050505; border: 3px solid #222; border-radius: 12px; padding: 10px 14px; box-shadow: inset 0 0 30px #000, 0 10px 30px #0006; }
+  .board-label { font-family: 'Bebas Neue', Impact, sans-serif; letter-spacing: 3px; color: var(--gold-dim); font-size: 15px; display: flex; justify-content: space-between; gap: 12px; }
+  .board-q { color: #cfd8ee; font-size: 14px; margin: 2px 0 6px; min-height: 1.2em; overflow-wrap: anywhere; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 4px; min-height: 46px; align-items: center; perspective: 400px; }
+  .tile { font-family: 'Bebas Neue', Impact, sans-serif; font-size: 32px; line-height: 44px; width: 28px; text-align: center; color: var(--gold); background: linear-gradient(180deg, #1c1c1c 50%, #141414 50%); border-radius: 4px; box-shadow: 0 2px 0 #000; position: relative; }
+  .tile::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #000; }
+  .tile.gap { background: transparent; box-shadow: none; width: 14px; }
+  .tile.gap::after { display: none; }
+  .tile.flip { animation: flip .25s ease-out; }
+  .tiles.placeholder .tile { color: #3a3a3a; }
+  .meter { margin-top: 8px; display: none; }
+  .meter.show { display: block; }
+  .meter-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .bar { height: 10px; background: #1a1a1a; border-radius: 999px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--red), var(--gold), #5cf28a); background-size: 300px 100%; border-radius: 999px; transition: width 1s cubic-bezier(.2,.8,.2,1); }
+  .alts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .alts span { background: #111; border: 1px solid #262626; border-radius: 999px; padding: 4px 10px; }
+  .error { color: var(--red); font-size: 14px; margin-top: 8px; }
+  .error:empty { display: none; }
+
+  /* ---------- legends ---------- */
+  h2 { font-family: 'Bebas Neue', Impact, sans-serif; letter-spacing: 2px; font-size: 32px; margin: 40px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .legends { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .jersey { background: linear-gradient(180deg, #13213f, #0b1428); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 14px 12px 12px; cursor: pointer; text-align: center; color: var(--text); font: inherit; transition: transform .25s cubic-bezier(.2,.8,.2,1), border-color .25s, box-shadow .25s; opacity: 0; transform: translateY(20px); }
+  .jersey.in { opacity: 1; transform: none; transition: opacity .5s, transform .5s cubic-bezier(.2,.8,.2,1), border-color .25s, box-shadow .25s; }
+  .jersey:hover, .jersey:focus-visible { transform: translateY(-6px) rotate(-1.5deg); border-color: var(--gold); box-shadow: 0 16px 30px #0007, 0 0 0 1px #ffd23f55; outline: none; }
+  .jersey svg { width: 100%; max-width: 120px; height: auto; display: block; margin: 0 auto 8px; }
+  .jersey .name { font-family: 'Bebas Neue', Impact, sans-serif; font-size: 22px; letter-spacing: 1.5px; }
+  .jersey .q { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+
+  footer { color: var(--muted); font-size: 13px; padding: 40px 0 30px; text-align: center; line-height: 1.6; }
+
+  /* ---------- animations ---------- */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes bob { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-10%) rotate(20deg); } }
+  @keyframes sway { 0%,100% { transform: translateX(-35%); } 50% { transform: translateX(35%); } }
+  @keyframes nudge { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  @keyframes beam { from { opacity: .35; } to { opacity: .7; } }
+  @keyframes flash { 0%, 92%, 100% { opacity: 0; } 94% { opacity: 1; } }
+  @keyframes ripple { 0% { transform: scaleY(1); } 30% { transform: scaleY(1.12) scaleX(.97); } 60% { transform: scaleY(.95); } 100% { transform: scaleY(1); } }
+  @keyframes pop { 0% { opacity: 0; scale: .3; } 15% { opacity: 1; scale: 1.15; } 25% { scale: 1; } 80% { opacity: 1; } 100% { opacity: 0; scale: 1.05; } }
+  @keyframes fall { to { transform: translateY(560px) rotate(720deg); opacity: .2; } }
+  @keyframes flip { 0% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+
+  @media (max-width: 560px) {
+    form { flex-direction: column; }
+    button.shoot { justify-content: center; padding: 12px; }
+    .tile { font-size: 28px; line-height: 40px; width: 24px; }
+    .tile.gap { width: 10px; }
+    .tiles { min-height: 44px; }
+    .brand h1 { font-size: 34px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .jersey { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><use href="#ball-art"/></svg>
+      <div>
+        <h1>Football <span>QA</span></h1>
+        <p>Ask a trivia question. The model takes the shot.</p>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>2,882</b> questions</div>
+      <div class="stat"><b>839</b> answers</div>
+      <div class="stat"><b>20.5%</b> on unseen questions</div>
+    </div>
+  </header>
+
+  <!-- stadium -->
+  <div class="scene" id="scene" aria-hidden="true">
+    <svg class="bg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#050a16"/><stop offset="1" stop-color="#14254a"/>
+        </linearGradient>
+        <linearGradient id="beamGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fffbe0" stop-opacity=".55"/><stop offset="1" stop-color="#fffbe0" stop-opacity="0"/>
+        </linearGradient>
+        <radialGradient id="glow"><stop offset="0" stop-color="#fffbe6"/><stop offset=".35" stop-color="#fff3b0" stop-opacity=".6"/><stop offset="1" stop-color="#fff3b0" stop-opacity="0"/></radialGradient>
+        <pattern id="crowd" width="14" height="12" patternUnits="userSpaceOnUse">
+          <rect width="14" height="12" fill="#0e1830"/>
+          <circle cx="4" cy="4" r="3" fill="#25365e"/><circle cx="11" cy="9" r="3" fill="#1d2c4f"/>
+        </pattern>
+        <pattern id="netPat" width="10" height="10" patternUnits="userSpaceOnUse">
+          <path d="M0 0L10 10M10 0L0 10" stroke="#ffffff" stroke-opacity=".35" stroke-width="1"/>
+        </pattern>
+        <linearGradient id="pitchFade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#000" stop-opacity=".35"/><stop offset=".5" stop-color="#000" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+
+      <rect width="1000" height="500" fill="url(#sky)"/>
+      <!-- stands -->
+      <path d="M0 70 L1000 70 L1000 205 L0 205 Z" fill="url(#crowd)"/>
+      <rect x="0" y="195" width="1000" height="12" fill="#0a1226"/>
+      <g id="flashes"></g>
+      <!-- ad boards -->
+      <g font-family="Bebas Neue, Impact, sans-serif" font-size="13" letter-spacing="3" text-anchor="middle">
+        <rect x="0" y="205" width="1000" height="18" fill="#101c3a"/>
+        <text x="160" y="219" fill="#ffd23f">FOOTBALL QA</text>
+        <text x="500" y="219" fill="#9fb0d4">LSTM · EMBEDDINGS · PYTORCH</text>
+        <text x="840" y="219" fill="#ffd23f">FOOTBALL QA</text>
+      </g>
+
+      <!-- pitch with stripes (fake perspective) -->
+      <g>
+        <path d="M150 223 L850 223 L1100 500 L-100 500 Z" fill="#1f7a3a"/>
+        <path d="M150 223 L237 223 L50 500 L-100 500 Z" fill="#239044"/>
+        <path d="M325 223 L412 223 L350 500 L200 500 Z" fill="#239044"/>
+        <path d="M500 223 L587 223 L650 500 L500 500 Z" fill="#239044" transform="translate(-0 0)"/>
+        <path d="M675 223 L762 223 L950 500 L800 500 Z" fill="#239044"/>
+        <path d="M150 223 L850 223 L1100 500 L-100 500 Z" fill="url(#pitchFade)"/>
+      </g>
+      <!-- markings -->
+      <g fill="none" stroke="#e9fbe9" stroke-opacity=".85" stroke-width="2.5">
+        <path d="M150 225 L850 225"/>
+        <path d="M300 225 L262 330 L738 330 L700 225"/>
+        <path d="M410 225 L398 262 L602 262 L590 225"/>
+        <path d="M430 330 Q500 365 570 330"/>
+      </g>
+      <circle cx="500" cy="440" r="4" fill="#e9fbe9"/>
+
+      <!-- goal -->
+      <g>
+        <rect class="net" x="412" y="128" width="176" height="97" fill="url(#netPat)" id="net"/>
+        <path d="M412 225 L412 128 L588 128 L588 225" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
+      </g>
+
+      <!-- floodlights -->
+      <g>
+        <polygon class="beam" points="60,40 120,40 420,500 -200,500" fill="url(#beamGrad)" opacity=".5"/>
+        <polygon class="beam b2" points="880,40 940,40 1200,500 580,500" fill="url(#beamGrad)" opacity=".5"/>
+        <rect x="86" y="40" width="8" height="60" fill="#1b2a4d"/>
+        <rect x="906" y="40" width="8" height="60" fill="#1b2a4d"/>
+        <circle cx="90" cy="34" r="60" fill="url(#glow)"/>
+        <circle cx="910" cy="34" r="60" fill="url(#glow)"/>
+        <rect x="58" y="22" width="64" height="22" rx="3" fill="#2b3c66"/>
+        <rect x="878" y="22" width="64" height="22" rx="3" fill="#2b3c66"/>
+        <g fill="#fffbe6">
+          <circle cx="68" cy="33" r="5"/><circle cx="84" cy="33" r="5"/><circle cx="100" cy="33" r="5"/><circle cx="114" cy="33" r="5"/>
+          <circle cx="888" cy="33" r="5"/><circle cx="904" cy="33" r="5"/><circle cx="920" cy="33" r="5"/><circle cx="934" cy="33" r="5"/>
+        </g>
+      </g>
+    </svg>
+
+    <!-- generic goalkeeper -->
+    <div class="keeper" id="keeper">
+      <svg viewBox="0 0 60 90">
+        <circle cx="30" cy="12" r="9" fill="#f1c7a1"/>
+        <path d="M14 26 Q30 20 46 26 L44 56 L16 56 Z" fill="#ff7a1a"/>
+        <path d="M14 27 L2 8" stroke="#ff7a1a" stroke-width="8" stroke-linecap="round"/>
+        <path d="M46 27 L58 8" stroke="#ff7a1a" stroke-width="8" stroke-linecap="round"/>
+        <circle cx="2" cy="6" r="5" fill="#fff"/><circle cx="58" cy="6" r="5" fill="#fff"/>
+        <rect x="16" y="56" width="28" height="12" fill="#111"/>
+        <path d="M22 68 L20 88 M38 68 L40 88" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+        <text x="30" y="47" text-anchor="middle" font-family="Bebas Neue, Impact, sans-serif" font-size="16" fill="#111">1</text>
+      </svg>
+    </div>
+
+    <svg class="aim" viewBox="0 0 100 100" preserveAspectRatio="none"><line id="aimLine" x1="50" y1="84" x2="50" y2="35"/></svg>
+    <div class="reticle" id="reticle"></div>
+    <div class="tally">You <b id="tallyYou">0</b> – <b id="tallyKeeper">0</b> Keeper</div>
+    <div class="hint" id="hint">🎯 Aim with your mouse, click to shoot</div>
+    <div class="shadow" id="shadow"></div>
+    <div class="ball idle" id="ball"><svg viewBox="0 0 100 100"><use href="#ball-art"/></svg></div>
+    <div class="callout" id="callout">GOAL!</div>
+  </div>
+
+  <!-- ask -->
+  <section class="panel">
+    <form id="ask">
+      <input type="text" id="question" placeholder="e.g. Who won the 1954 FIFA World Cup?" autocomplete="off" aria-label="Your football question">
+      <button class="shoot" id="shoot" type="submit">Shoot <span aria-hidden="true">⚽</span></button>
+    </form>
+
+    <div class="board" aria-live="polite">
+      <div class="board-label"><span>Question</span><span id="status">Ready</span></div>
+      <div class="board-q" id="boardQ">Ask anything from World Cups to Ballon d'Or winners.</div>
+      <div class="board-label"><span>Answer</span></div>
+      <div class="tiles placeholder" id="tiles"></div>
+      <div class="meter" id="meter">
+        <div class="meter-row"><span>Confidence</span><span id="confText">0%</span></div>
+        <div class="bar"><i id="confBar"></i></div>
+        <div class="alts" id="alts"></div>
+      </div>
+    </div>
+    <div class="error" id="error"></div>
+    <div class="try" id="try"></div>
+  </section>
+
+  <!-- legends -->
+  <h2>Legends</h2>
+  <p class="sub">Pick a shirt to ask about an iconic player.</p>
+  <div class="legends" id="legends"></div>
+
+  <footer>
+    The model gets about 1 in 5 questions right when it hasn't seen them before, so treat it as a fun learning project, not a reference.<br>
+    <a href="https://github.com/suyogkarki1/football_qa">View the code on GitHub</a>
+  </footer>
+</div>
+
+<!-- shared ball artwork -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="ballShade" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#e8e8e8"/><stop offset="1" stop-color="#b9b9b9"/></radialGradient>
+    <g id="ball-art">
+      <circle cx="50" cy="50" r="47" fill="url(#ballShade)" stroke="#222" stroke-width="2"/>
+      <polygon points="50,32 67,44 61,64 39,64 33,44" fill="#1a1a1a"/>
+      <g fill="#1a1a1a">
+        <path d="M50 3 L60 9 L50 17 L40 9 Z"/>
+        <path d="M93 38 L95 52 L84 54 L82 42 Z"/>
+        <path d="M76 88 L64 95 L60 84 L70 78 Z"/>
+        <path d="M24 88 L36 95 L40 84 L30 78 Z"/>
+        <path d="M7 38 L5 52 L16 54 L18 42 Z"/>
+      </g>
+      <g stroke="#1a1a1a" stroke-width="2" fill="none">
+        <path d="M50 17 L50 32 M82 42 L67 44 M70 78 L61 64 M30 78 L39 64 M18 42 L33 44"/>
+      </g>
+    </g>
+  </defs>
+</svg>
+
+<script>
+const LEGENDS = [
+  { name: 'Messi', number: 10, colors: ['#7ec8f0', '#ffffff'], stripes: true, text: '#0b2a57', q: 'Which MLS club did Lionel Messi join in 2023?' },
+  { name: 'Ronaldo', number: 7, colors: ['#c8102e', '#c8102e'], text: '#ffffff', trim: '#046a38', q: "How many Ballon d'Or awards has Cristiano Ronaldo won?" },
+  { name: 'Pelé', number: 10, colors: ['#ffdf00', '#ffdf00'], text: '#009c3b', trim: '#009c3b', q: 'How many World Cups did Pele win with Brazil?' },
+  { name: 'Maradona', number: 10, colors: ['#7ec8f0', '#ffffff'], stripes: true, text: '#0b2a57', q: 'Which club signed Diego Maradona from Barcelona in 1984?' },
+  { name: 'Zidane', number: 10, colors: ['#1e3a8a', '#1e3a8a'], text: '#ffffff', trim: '#e11d48', q: 'Which club signed Zinedine Zidane from Juventus for a world record fee in 2001?' },
+  { name: 'Cruyff', number: 14, colors: ['#ff7a00', '#ff7a00'], text: '#111111', trim: '#111111', q: 'Which country did Johan Cruyff represent?' },
+  { name: 'Beckenbauer', number: 5, colors: ['#ffffff', '#ffffff'], text: '#111111', trim: '#111111', q: 'Which position is Franz Beckenbauer famous for pioneering?' },
+  { name: 'Ronaldinho', number: 10, colors: ['#ffdf00', '#ffdf00'], text: '#009c3b', trim: '#009c3b', q: 'Which country did Ronaldinho represent?' },
+];
+const TRY = [
+  'Who won the 1954 FIFA World Cup?',
+  "Who won the Ballon d'Or in 1958?",
+  'Which team lost the final of the 1958 FIFA World Cup?',
+];
+
+const $ = id => document.getElementById(id);
+const scene = $('scene'), ball = $('ball'), shadow = $('shadow'), keeper = $('keeper');
+const callout = $('callout'), net = $('net'), tiles = $('tiles');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const escapeHTML = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = ms =>new Promise(r => setTimeout(r, reduceMotion ? 0 : ms));
+
+/* ---------- jerseys ---------- */
+function jerseySVG(p) {
+  const id = 'st' + p.name.replace(/\W/g, '');
+  const body = p.stripes ? `url(#${id})` : p.colors[0];
+  return `<svg viewBox="0 0 120 120" aria-hidden="true">
+    <defs><pattern id="${id}" width="20" height="10" patternUnits="userSpaceOnUse">
+      <rect width="10" height="10" fill="${p.colors[0]}"/><rect x="10" width="10" height="10" fill="${p.colors[1]}"/></pattern></defs>
+    <path d="M38 10 Q60 22 82 10 L112 28 L100 52 L88 46 L88 112 L32 112 L32 46 L20 52 L8 28 Z"
+      fill="${body}" stroke="#0006" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M38 10 Q60 22 82 10" fill="none" stroke="${p.trim || p.text}" stroke-width="4"/>
+    <text x="60" y="44" text-anchor="middle" font-family="Bebas Neue, Impact, sans-serif" font-size="13" letter-spacing="1" fill="${p.text}">${p.name.toUpperCase()}</text>
+    <text x="60" y="96" text-anchor="middle" font-family="Bebas Neue, Impact, sans-serif" font-size="50" fill="${p.text}" stroke="#0003" stroke-width="1">${p.number}</text>
+  </svg>`;
+}
+const legendsEl = $('legends');
+LEGENDS.forEach((p, i) => {
+  const b = document.createElement('button');
+  b.className = 'jersey';
+  b.innerHTML = `${jerseySVG(p)}<div class="name">${p.name}</div><div class="q">${p.q}</div>`;
+  b.addEventListener('click', () => { $('question').value = p.q; ask(p.q); });
+  legendsEl.appendChild(b);
+  setTimeout(() => b.classList.add('in'), 120 + i * 90);
+});
+
+TRY.forEach(q => {
+  const c = document.createElement('button');
+  c.className = 'chip'; c.type = 'button'; c.textContent = q;
+  c.addEventListener('click', () => { $('question').value = q; ask(q); });
+  $('try').appendChild(c);
+});
+
+/* ---------- crowd camera flashes ---------- */
+const flashes = $('flashes');
+for (let i = 0; i < 40; i++) {
+  const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', Math.random() * 1000);
+  c.setAttribute('cy', 75 + Math.random() * 120);
+  c.setAttribute('r', 1.5 + Math.random() * 2);
+  c.setAttribute('fill', '#fff');
+  c.setAttribute('class', 'flash');
+  c.style.animationDelay = (-Math.random() * 3).toFixed(2) + 's';
+  c.style.animationDuration = (2 + Math.random() * 4).toFixed(2) + 's';
+  flashes.appendChild(c);
+}
+
+/* ---------- scoreboard ---------- */
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function setTiles(text, placeholder) {
+  tiles.classList.toggle('placeholder', !!placeholder);
+  tiles.innerHTML = '';
+  [...text.toUpperCase()].forEach(ch => {
+    const t = document.createElement('span');
+    t.className = 'tile' + (ch === ' ' ? ' gap' : '');
+    t.textContent = ch === ' ' ? '' : ch;
+    tiles.appendChild(t);
+  });
+}
+async function flapTo(text) {
+  tiles.classList.remove('placeholder');
+  tiles.innerHTML = '';
+  const els = [...text.toUpperCase()].map(ch => {
+    const t = document.createElement('span');
+    t.className = 'tile' + (ch === ' ' ? ' gap' : '');
+    tiles.appendChild(t);
+    return { t, ch };
+  });
+  if (reduceMotion) { els.forEach(({ t, ch }) => t.textContent = ch === ' ' ? '' : ch); return; }
+  await Promise.all(els.map(({ t, ch }, i) => new Promise(done => {
+    if (ch === ' ') return done();
+    const stop = 250 + i * 70;
+    const start = performance.now();
+    (function tick(now) {
+      if (now - start >= stop) {
+        t.textContent = ch; t.classList.remove('flip'); void t.offsetWidth; t.classList.add('flip'); return done();
+      }
+      t.textContent = CHARS[(Math.random() * CHARS.length) | 0];
+      setTimeout(() => requestAnimationFrame(tick), 45);
+    })(start);
+  })));
+}
+setTiles('ASK ME', true);
+
+/* ---------- penalty engine ----------
+   All positions are in % of the scene (x of width, y of height); the scene
+   is always 2:1, matching the 1000x500 SVG, so they line up with the goal. */
+const START = { x: 50, y: 84 };
+const GOAL = { l: 41.2, r: 58.8, t: 25.6, b: 45 };
+const HOME = { x: 50, y: 35 };       // keeper's centre on the goal line
+const KEEPER_RANGE = 6.8;           // furthest the keeper can dive sideways
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+let pitchBusy = false;
+const tally = { you: 0, keeper: 0 };
+
+function animate(el, frames, duration, opts = {}) {
+  if (reduceMotion) return Promise.resolve();
+  return el.animate(frames, { duration, easing: 'cubic-bezier(.25,.7,.35,1)', fill: 'forwards', ...opts }).finished;
+}
+const pos = (p, scale, rotate, extra = {}) => ({ left: p.x + '%', top: p.y + '%', scale, rotate: rotate + 'deg', ...extra });
+
+// where the keeper dives for a shot at `t`: sometimes he reads it, otherwise he guesses
+function keeperGuess(t) {
+  let d;
+  const r = Math.random();
+  if (r < .4) d = { x: t.x + rand(-2, 2), y: t.y + rand(-3, 3) };
+  else if (r < .55) d = { x: HOME.x, y: 38 };
+  else d = { x: rand(GOAL.l + 1, GOAL.r - 1), y: rand(29, 44) };
+  const x = clamp(d.x, HOME.x - KEEPER_RANGE, HOME.x + KEEPER_RANGE);
+  // he can't get high and wide at the same time, so the top corners are the best spot
+  const far = Math.abs(x - HOME.x) / KEEPER_RANGE;
+  return { x, y: clamp(d.y, 29 + 6 * far * far, 44) };
+}
+
+function judge(t, d) {
+  const nearX = x => Math.abs(t.x - x) < .7;
+  const withinX = t.x > GOAL.l && t.x < GOAL.r;
+  if ((nearX(GOAL.l) || nearX(GOAL.r)) && t.y > GOAL.t - 1 && t.y <= GOAL.b) return 'post';
+  if (Math.abs(t.y - GOAL.t) < 1.2 && withinX) return 'bar';
+  if (!withinX || t.y < GOAL.t) return 'miss';
+  const { width: W, height: H } = scene.getBoundingClientRect();
+  const dist = Math.hypot((t.x - d.x) / 100 * W, (t.y - d.y) / 100 * H);
+  // full stretch dives cover less ground than standing saves
+  const stretch = Math.min(1, Math.hypot((d.x - HOME.x) / KEEPER_RANGE, (d.y - 38) / 9));
+  return dist < .048 * W * (1 - .4 * stretch) ? 'saved' : 'goal';
+}
+
+async function takeShot(t, d, result) {
+  pitchBusy = true;
+  hideAim();
+  ball.classList.remove('idle');
+  shadow.style.opacity = '0';
+  const { width: W, height: H } = scene.getBoundingClientRect();
+
+  keeper.classList.add('diving');
+  const tilt = (d.x - HOME.x) / KEEPER_RANGE * 75;
+  animate(keeper, [{ transform: 'none' },
+    { transform: `translate(${(d.x - HOME.x) / 100 * W}px, ${(d.y - HOME.y) / 100 * H}px) rotate(${tilt}deg)` }],
+    420, { delay: 90 });
+
+  await animate(ball, [pos(START, 1, 0), pos(t, .45, 900)], 520);
+
+  const side = t.x < 50 ? -1 : 1;
+  if (result === 'goal') {
+    net.classList.remove('ripple'); void net.getBoundingClientRect(); net.classList.add('ripple');
+    animate(ball, [pos(t, .45, 900), pos({ x: t.x, y: Math.min(t.y + 3, 44) }, .42, 960)], 250);
+    showCallout('GOAL!', false); confetti();
+  } else if (result === 'saved') {
+    const away = t.x >= d.x ? 1 : -1;
+    animate(ball, [pos(t, .45, 900), pos({ x: t.x + away * 14, y: 62 }, .75, 1300)], 500);
+    showCallout('SAVED!', true);
+  } else if (result === 'post' || result === 'bar') {
+    animate(ball, [pos(t, .45, 900), pos({ x: t.x + side * 10, y: 66 }, .8, 1250)], 550);
+    showCallout(result === 'post' ? 'POST!' : 'CROSSBAR!', true);
+  } else {
+    animate(ball, [pos(t, .45, 900), pos({ x: t.x + (t.x - 50) * .5, y: t.y - 10 }, .25, 1100, { opacity: 0 })], 400);
+    showCallout('MISS!', true);
+  }
+
+  await sleep(1300);
+  keeper.getAnimations().forEach(a => a.cancel());
+  keeper.classList.remove('diving');
+  ball.getAnimations().forEach(a => a.cancel());
+  if (!reduceMotion) ball.animate([{ opacity: 0, scale: .6 }, { opacity: 1, scale: 1 }], { duration: 300 });
+  shadow.style.opacity = '1';
+  ball.classList.add('idle');
+  pitchBusy = false;
+}
+
+// the model's own penalty when a question is answered: scores if it's confident
+function modelShot(goal) {
+  const side = Math.random() < .5 ? -1 : 1;
+  const t = { x: 50 + side * rand(4, 6.5), y: rand(30, 40) };
+  const d = goal ? { x: HOME.x - side * 5, y: 38 } : { x: t.x, y: t.y };
+  return takeShot(t, d, goal ? 'goal' : 'saved');
+}
+
+/* ---------- aiming with the mouse ---------- */
+const aimLine = $('aimLine'), reticle = $('reticle'), hint = $('hint');
+function scenePoint(e) {
+  const r = scene.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100 };
+}
+function hideAim() { scene.classList.remove('aiming'); }
+scene.addEventListener('pointermove', e => {
+  if (pitchBusy) return;
+  const p = scenePoint(e);
+  scene.classList.add('aiming');
+  reticle.style.left = p.x + '%'; reticle.style.top = p.y + '%';
+  aimLine.setAttribute('x2', p.x); aimLine.setAttribute('y2', p.y);
+});
+scene.addEventListener('pointerleave', hideAim);
+scene.addEventListener('click', async e => {
+  if (pitchBusy) return;
+  const p = scenePoint(e);
+  // aiming low means a shot along the ground; a little spread so the posts are a real risk
+  const t = { x: p.x + rand(-.8, .8), y: Math.min(p.y, GOAL.b - .5) + rand(-.8, .8) };
+  const d = keeperGuess(t);
+  const result = judge(t, d);
+  hint.classList.add('gone');
+  if (result === 'goal') tally.you++; else tally.keeper++;
+  $('tallyYou').textContent = tally.you; $('tallyKeeper').textContent = tally.keeper;
+  await takeShot(t, d, result);
+});
+
+function showCallout(text, bad) {
+  callout.textContent = text;
+  callout.classList.toggle('saved', bad);
+  callout.classList.remove('show'); void callout.offsetWidth; callout.classList.add('show');
+}
+function confetti() {
+  if (reduceMotion) return;
+  const colors = ['#ffd23f', '#ffffff', '#5cf28a', '#7ec8f0', '#ff4d5e'];
+  for (let i = 0; i < 60; i++) {
+    const c = document.createElement('i');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + '%';
+    c.style.background = colors[i % colors.length];
+    c.style.animationDuration = (1.4 + Math.random() * 1.6) + 's';
+    c.style.animationDelay = (Math.random() * .3) + 's';
+    scene.appendChild(c);
+    c.addEventListener('animationend', () => c.remove());
+  }
+}
+
+/* ---------- ask ---------- */
+let busy = false;
+async function ask(question) {
+  question = question.trim();
+  if (!question || busy) return;
+  busy = true;
+  $('shoot').disabled = true;
+  $('error').textContent = '';
+  $('status').textContent = 'Thinking…';
+  $('boardQ').textContent = question;
+  $('meter').classList.remove('show');
+  $('confBar').style.width = '0';
+  setTiles('', false);
+  // make sure the pitch is on screen so the shot is visible
+  if (scene.getBoundingClientRect().top < 0) window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+
+  let data;
+  try {
+    const res = await fetch('/api/ask', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }),
+    });
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  } catch (e) {
+    $('error').textContent = e instanceof TypeError ? "Can't reach the model. Is app.py running?" : e.message;
+    $('status').textContent = 'Ready';
+    setTiles('NO SIGNAL', true);
+    busy = false; $('shoot').disabled = false;
+    return;
+  }
+
+  const goal = data.answer !== null;
+  while (pitchBusy) await new Promise(r => setTimeout(r, 100)); // let your own shot finish first
+  const shot = modelShot(goal);
+  $('status').textContent = goal ? 'Scored' : 'Not sure';
+
+  await sleep(600);
+  await flapTo(goal ? data.answer : "I DON'T KNOW".replace("'", ''));
+  const pct = Math.round(data.confidence * 100);
+  $('confText').textContent = pct + '%';
+  $('meter').classList.add('show');
+  requestAnimationFrame(() => { $('confBar').style.width = Math.max(pct, 2) + '%'; });
+  $('alts').innerHTML = '<span style="background:none;border:0;padding:4px 0">Other guesses:</span>' +
+    data.alternatives.slice(goal ? 1 : 0).map(a => `<span>${escapeHTML(a.answer)} · ${Math.round(a.confidence * 100)}%</span>`).join('');
+
+  await shot;
+  busy = false;
+  $('shoot').disabled = false;
+}
+
+$('ask').addEventListener('submit', e => { e.preventDefault(); ask($('question').value); });
+</script>
+</body>
+</html>
